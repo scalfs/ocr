@@ -10,8 +10,10 @@ all image processing calls in that worker's lifetime.
 import time
 from pathlib import Path
 
-from docling.datamodel.pipeline_options import EasyOcrOptions
-from docling.document_converter import DocumentConverter
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import EasyOcrOptions, PdfPipelineOptions
+from docling.datamodel.document import ConversionStatus
+from docling.document_converter import DocumentConverter, ImageFormatOption
 
 from .models import ProcessResult
 
@@ -42,10 +44,17 @@ def _init_worker(use_gpu: bool = False) -> None:
     try:
         # Configure EasyOCR with English language only (reduces model downloads)
         ocr_options = EasyOcrOptions(lang=["en"], use_gpu=use_gpu)
+        pipeline_options = PdfPipelineOptions(
+            do_ocr=True,
+            ocr_options=ocr_options,
+        )
 
-        # Instantiate converter with OCR pipeline
+        # Instantiate converter with typed image format options.
+        # Docling expects InputFormat keys and ImageFormatOption values here.
         _converter = DocumentConverter(
-            format_options={"image": {"pipeline_options": {"ocr_options": ocr_options}}}
+            format_options={
+                InputFormat.IMAGE: ImageFormatOption(pipeline_options=pipeline_options)
+            }
         )
     except Exception as e:
         # Log but don't fail the worker startup — models may already be cached
@@ -88,8 +97,8 @@ def process_image(path: Path) -> ProcessResult:
         # Convert image, catching errors at the Docling level
         result = _converter.convert(path, raises_on_error=False)
 
-        # Check if conversion succeeded
-        if result.status.success:
+        # Docling v2 status is an enum, not a boolean field.
+        if result.status in (ConversionStatus.SUCCESS, ConversionStatus.PARTIAL_SUCCESS):
             markdown = result.document.export_to_markdown()
             duration = time.perf_counter() - start_time
             return ProcessResult(
@@ -101,13 +110,16 @@ def process_image(path: Path) -> ProcessResult:
             )
         else:
             # Docling conversion failed gracefully
-            error_msg = str(result.status.error_message) if result.status.error_message else "Unknown error"
+            if getattr(result, "errors", None):
+                error_msg = str(result.errors[0])
+            else:
+                error_msg = f"Conversion failed with status={result.status}"
             duration = time.perf_counter() - start_time
             return ProcessResult(
                 path=path,
                 markdown=None,
                 error=error_msg,
-                error_type=type(result.status.error_message).__name__ if result.status.error_message else "ConversionError",
+                error_type="ConversionError",
                 duration_s=duration,
             )
 

@@ -41,12 +41,19 @@ def warmup_models(use_gpu: bool = False) -> None:
 
     try:
         # Instantiate converter in main process (single-threaded, safe)
-        from docling.datamodel.pipeline_options import EasyOcrOptions
-        from docling.document_converter import DocumentConverter
+        from docling.datamodel.base_models import InputFormat
+        from docling.datamodel.pipeline_options import EasyOcrOptions, PdfPipelineOptions
+        from docling.document_converter import DocumentConverter, ImageFormatOption
 
         ocr_options = EasyOcrOptions(lang=["en"], use_gpu=use_gpu)
+        pipeline_options = PdfPipelineOptions(
+            do_ocr=True,
+            ocr_options=ocr_options,
+        )
         converter = DocumentConverter(
-            format_options={"image": {"pipeline_options": {"ocr_options": ocr_options}}}
+            format_options={
+                InputFormat.IMAGE: ImageFormatOption(pipeline_options=pipeline_options)
+            }
         )
 
         # Attempt a minimal convert to trigger model downloads and cache population.
