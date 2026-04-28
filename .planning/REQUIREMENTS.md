@@ -64,8 +64,33 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| REQ-01 to REQ-25 | Phase 1 | — Pending |
-| v2 Requirements | Phase 2 | — Out of scope v1 |
+| REQ-01 | Phase 1 | Pending |
+| REQ-02 | Phase 1 | Pending |
+| REQ-03 | Phase 1 | Pending |
+| REQ-04 | Phase 1 | Pending |
+| REQ-05 | Phase 1 | Pending |
+| REQ-06 | Phase 1 | Pending |
+| REQ-07 | Phase 1 | Pending |
+| REQ-08 | Phase 1 | Pending |
+| REQ-09 | Phase 1 | Pending |
+| REQ-10 | Phase 1 | Pending |
+| REQ-11 | Phase 1 | Pending |
+| REQ-12 | Phase 1 | Pending |
+| REQ-13 | Phase 1 | Pending |
+| REQ-14 | Phase 1 | Pending |
+| REQ-15 | Phase 1 | Pending |
+| REQ-16 | Phase 1 | Pending |
+| REQ-17 | Phase 1 | Pending |
+| REQ-18 | Phase 1 | Pending |
+| REQ-19 | Phase 1 | Pending |
+| REQ-20 | Phase 1 | Pending |
+| REQ-21 | Phase 1 | Pending |
+| REQ-22 | Phase 1 | Pending |
+| REQ-23 | Phase 1 | Pending |
+| REQ-24 | Phase 1 | Pending |
+| REQ-25 | Phase 1 | Pending |
+| v2 Requirements | Phase 2 | Out of scope v1 |
 
 ---
-*Last updated: 2026-04-28 after research completion*
+
+*Last updated: 2026-04-28 after roadmap creation*
