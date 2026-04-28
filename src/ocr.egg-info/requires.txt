@@ -1,0 +1,7 @@
+docling>=2.91.0
+easyocr>=1.7.2
+natsort>=8.4.0
+pillow>=12.2.0
+rich>=15.0.0
+tqdm>=4.67.3
+typer>=0.21.2
