@@ -5,131 +5,126 @@ Implements the initializer pattern to load DocumentConverter once per worker pro
 
 The converter is stored in a module-level global _converter variable, reused across
 all image processing calls in that worker's lifetime.
+
+OCR backend: RapidOCR
+- GPU path  (use_gpu=True):  backend='torch'     — CUDA inference, ~1.3s/image
+- CPU path  (use_gpu=False): backend='onnxruntime' — ONNX CPU,     ~1.6s/image
 """
 
+import gc
 import time
 from pathlib import Path
 
 from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import EasyOcrOptions, PdfPipelineOptions
+from docling.datamodel.pipeline_options import RapidOcrOptions, PdfPipelineOptions
 from docling.datamodel.document import ConversionStatus
 from docling.document_converter import DocumentConverter, ImageFormatOption
 
 from .models import ProcessResult
 
 # C1 MITIGATION: Module-level global converter, instantiated once per worker process
-# This avoids the PicklingError that would occur if we tried to pass a converter
-# instance to a worker via multiprocessing pool.
 _converter = None
+_use_gpu = False
 
 
 def _init_worker(use_gpu: bool = False) -> None:
     """Initialize worker process with DocumentConverter instance.
 
-    Called exactly once per worker process when the Pool is created with
-    initializer=_init_worker. Builds and caches the converter globally so
-    subsequent process_image() calls reuse the loaded model.
-
-    C1 MITIGATION: Instantiates DocumentConverter here (not picklable) so each
-    worker gets its own non-serialized copy.
+    Called exactly once per worker process via Pool(initializer=...).
 
     Args:
-        use_gpu: If True, use GPU for EasyOCR inference; default False for portability.
-
-    Returns:
-        None. Sets global _converter variable.
+        use_gpu: If True, use RapidOCR torch backend (CUDA). Otherwise onnxruntime (CPU).
     """
-    global _converter
+    global _converter, _use_gpu
+    _use_gpu = use_gpu
 
     try:
-        # Configure EasyOCR with English language only (reduces model downloads)
-        ocr_options = EasyOcrOptions(lang=["en"], use_gpu=use_gpu)
+        backend = "torch" if use_gpu else "onnxruntime"
+        ocr_options = RapidOcrOptions(
+            lang=["english"],
+            backend=backend,
+            print_verbose=False,
+        )
         pipeline_options = PdfPipelineOptions(
             do_ocr=True,
             ocr_options=ocr_options,
         )
-
-        # Instantiate converter with typed image format options.
-        # Docling expects InputFormat keys and ImageFormatOption values here.
         _converter = DocumentConverter(
             format_options={
                 InputFormat.IMAGE: ImageFormatOption(pipeline_options=pipeline_options)
             }
         )
     except Exception as e:
-        # Log but don't fail the worker startup — models may already be cached
-        # or converter may still be usable for non-OCR content
         import logging
-
-        logger = logging.getLogger(__name__)
-        logger.warning(f"DocumentConverter initialization warning: {e}")
-        # Allow worker to continue; process_image will handle any missing converter
+        logging.getLogger(__name__).warning(f"DocumentConverter initialization warning: {e}")
 
 
 def process_image(path: Path) -> ProcessResult:
     """Process a single image through OCR pipeline.
 
-    Called per image in the worker pool. Uses the pre-loaded _converter global.
-    All exceptions are caught and returned as error state, not raised.
+    Uses the pre-loaded _converter global. All exceptions are caught and returned
+    as error state — never raises.
 
     Args:
         path: Path to image file to process.
 
     Returns:
-        ProcessResult with markdown (success) or error fields (failure).
-            Always returns — never raises an exception.
+        ProcessResult with markdown on success or error fields on failure.
     """
-    global _converter
+    global _converter, _use_gpu
 
     start_time = time.perf_counter()
 
     if _converter is None:
-        duration = time.perf_counter() - start_time
         return ProcessResult(
             path=path,
             markdown=None,
             error="DocumentConverter not initialized in worker",
             error_type="RuntimeError",
-            duration_s=duration,
+            duration_s=time.perf_counter() - start_time,
         )
 
     try:
-        # Convert image, catching errors at the Docling level
         result = _converter.convert(path, raises_on_error=False)
 
-        # Docling v2 status is an enum, not a boolean field.
         if result.status in (ConversionStatus.SUCCESS, ConversionStatus.PARTIAL_SUCCESS):
             markdown = result.document.export_to_markdown()
-            duration = time.perf_counter() - start_time
             return ProcessResult(
                 path=path,
                 markdown=markdown,
                 error=None,
                 error_type=None,
-                duration_s=duration,
+                duration_s=time.perf_counter() - start_time,
             )
         else:
-            # Docling conversion failed gracefully
             if getattr(result, "errors", None):
                 error_msg = str(result.errors[0])
             else:
                 error_msg = f"Conversion failed with status={result.status}"
-            duration = time.perf_counter() - start_time
             return ProcessResult(
                 path=path,
                 markdown=None,
                 error=error_msg,
                 error_type="ConversionError",
-                duration_s=duration,
+                duration_s=time.perf_counter() - start_time,
             )
 
     except Exception as e:
-        # Catch any unexpected exceptions (timeouts, memory, etc.)
-        duration = time.perf_counter() - start_time
         return ProcessResult(
             path=path,
             markdown=None,
             error=str(e),
             error_type=type(e).__name__,
-            duration_s=duration,
+            duration_s=time.perf_counter() - start_time,
         )
+
+    finally:
+        # Mitigate incremental memory growth between images.
+        gc.collect()
+        if _use_gpu:
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except ImportError:
+                pass

@@ -19,6 +19,7 @@ import logging
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
 import typer
 from rich.console import Console
@@ -52,6 +53,7 @@ def setup_logging(verbose: bool = False) -> None:
     # Suppress library debug output
     logging.getLogger("docling").setLevel(log_level)
     logging.getLogger("easyocr").setLevel(log_level)
+    logging.getLogger("RapidOCR").setLevel(log_level)
     logging.getLogger("PIL").setLevel(log_level)
 
     # Configure root logger (ocr_batch modules will use INFO/DEBUG)
@@ -77,12 +79,12 @@ def main(
         None,
         "--workers",
         "-w",
-        help="Number of worker processes (default: 4, capped at CPU count)",
+        help="Number of worker processes (default: auto, capped at 3 for GPU / 4 for CPU)",
     ),
-    gpu: bool = typer.Option(
-        False,
-        "--gpu",
-        help="Use GPU for OCR (default: False)",
+    gpu: Optional[bool] = typer.Option(
+        None,
+        "--gpu/--no-gpu",
+        help="Use GPU for OCR. Default: auto-detect CUDA.",
     ),
     log: str = typer.Option(
         "errors.jsonl",
@@ -156,8 +158,14 @@ def main(
         error_logger = ErrorLogger(Path(log), timestamp_utc=True)
         output_writer = OutputWriter(output_path, original_paths=valid_paths)
 
-        # Process all valid images
-        console.print(f"[cyan]Processing images with {workers or 4} workers...[/cyan]")
+        # Resolve GPU and worker count to show accurate startup message
+        use_gpu = gpu if gpu is not None else processor.detect_gpu()
+        cap = processor._GPU_WORKER_CAP if use_gpu else processor._CPU_WORKER_CAP
+        effective_workers = min(workers or cap, cap)
+        device_label = "GPU (CUDA)" if use_gpu else "CPU"
+        console.print(
+            f"[cyan]Processing images with {effective_workers} workers on {device_label}...[/cyan]"
+        )
         error_count = 0
 
         for result in processor.process_all(

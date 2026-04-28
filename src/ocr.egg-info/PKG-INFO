@@ -11,3 +11,73 @@ Requires-Dist: pillow>=12.2.0
 Requires-Dist: rich>=15.0.0
 Requires-Dist: tqdm>=4.67.3
 Requires-Dist: typer>=0.21.2
+
+# OCR Batch Processor
+
+Batch OCR CLI that scans a flat image folder and writes one combined Markdown file.
+
+## What it does
+
+- Discovers supported image files in one directory (`.jpg`, `.jpeg`, `.png`, `.tiff`, `.tif`, `.webp`, `.bmp`)
+- Runs OCR with Docling + EasyOCR
+- Writes combined output as:
+  - `# filename.ext`
+  - extracted text
+  - `---`
+- Logs failures as JSONL (`errors.jsonl`)
+
+## Requirements
+
+- Python `3.13` (project currently uses `requires-python = ">=3.13"`)
+- `uv` installed
+
+## Install dependencies
+
+From repository root:
+
+```bash
+uv sync
+```
+
+## Run
+
+Basic usage:
+
+```bash
+uv run python -m ocr_batch /path/to/images --output output.md --log errors.jsonl
+```
+
+Recommended for local/dev environments (keeps model caches inside project):
+
+```bash
+mkdir -p .cache/easyocr .cache/docling .cache/hf
+EASYOCR_MODULE_PATH="$PWD/.cache/easyocr" \
+DOCLING_CACHE_DIR="$PWD/.cache/docling" \
+HF_HOME="$PWD/.cache/hf" \
+uv run python -m ocr_batch /path/to/images --output output.md --log errors.jsonl --workers 1
+```
+
+## CLI options
+
+- `--output`, `-o`: output Markdown path (default: `output.md`)
+- `--log`, `-l`: error log JSONL path (default: `errors.jsonl`)
+- `--workers`, `-w`: worker process count
+- `--gpu`: enable GPU OCR path
+- `--verbose`, `-v`: verbose logging
+
+Show help:
+
+```bash
+uv run python -m ocr_batch --help
+```
+
+## Outputs
+
+- Main output: `output.md` (or your `--output` path)
+- Error log: `errors.jsonl` (or your `--log` path), one JSON object per failed file
+
+## Notes
+
+- First run can download OCR/model artifacts and may take longer.
+- If output is empty or failures spike, inspect `errors.jsonl` first.
+- This tool processes one flat directory (no recursive scan).

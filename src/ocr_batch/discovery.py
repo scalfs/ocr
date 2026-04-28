@@ -105,7 +105,11 @@ def check_webp_support() -> bool:
     Side Effect:
         Logs warning if WEBP is not available.
     """
-    has_webp = features.check_codec("webp")
+    try:
+        has_webp = features.check_codec("webp")
+    except ValueError:
+        # Pillow >=10 removed "webp" from check_codec; use check_module instead.
+        has_webp = features.check_module("webp")
     if not has_webp:
         logger.warning(
             "WEBP support not available in Pillow. "
